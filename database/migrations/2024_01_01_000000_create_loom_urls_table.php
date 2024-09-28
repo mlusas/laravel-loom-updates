@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('url');
             $table->string('file_path');
-            $table->integer('line_number');
+            $table->integer('line_number')->nullable();
             $table->date('date')->nullable();
             $table->string('author')->nullable();
             $table->string('title')->nullable();

@@ -7,90 +7,134 @@ use mlusas\LaravelLoomUpdates\Models\LoomUrl;
 use Illuminate\Support\Facades\Config;
 use RecursiveIteratorIterator;
 use RecursiveDirectoryIterator;
+use Carbon\Carbon;
 
 class ListLoomUrls extends Command
 {
-    protected $signature = 'loom:list {timeframe? : The timeframe to filter URLs (day, week, month)}';
+    protected $signature = 'loom:list {--timeframe= : The timeframe to filter URLs (day, week, month)}';
     protected $description = 'List all Loom URLs in the codebase';
+
+    protected $urlsFromDatabase = [];
+    protected $urlsFromFiles = [];
+    protected $allUrls = [];
 
     public function handle()
     {
-        $timeframe = $this->argument('timeframe');
-        $urls = $this->getUrls($timeframe);
+        $this->info('Starting Loom URL scan...');
+        $timeframe = $this->option('timeframe');
 
-        $this->displayUrls($urls, 'Loom URLs');
+        $this->collectUrls($timeframe);
+        $this->mergeUrls();
+
+        $this->info('Found ' . count($this->allUrls) . ' URLs');
+        $this->displayUrls($this->allUrls, 'Loom URLs');
     }
 
-    public function getUrls($timeframe = null)
+    public function getAllUrls($timeframe = null)
     {
-        $urls = [];
-
-        if ($this->useDatabaseStorage()) {
-            $urls = $this->getLoomUrlsFromDatabase($timeframe)->toArray();
-        }
-
-        // Always scan directories, regardless of database storage
-        $undatedUrls = [];
-        $this->scanDirectories($urls, $undatedUrls, $timeframe);
-        $urls = array_merge($urls, $undatedUrls);
-
-        return $urls;
+        $this->collectUrls($timeframe);
+        $this->mergeUrls();
+        return $this->allUrls;
     }
 
-    private function useDatabaseStorage()
+    protected function collectUrls($timeframe)
+    {
+        if ($this->useDatabaseStorage()) {
+            $this->urlsFromDatabase = $this->getLoomUrlsFromDatabase($timeframe);
+        }
+        $this->scanDirectories($timeframe);
+    }
+
+    protected function mergeUrls()
+    {
+        $this->allUrls = array_merge($this->urlsFromDatabase, $this->urlsFromFiles);
+    }
+
+    protected function useDatabaseStorage()
     {
         return Config::get('loom-updates.use_database', true);
     }
 
-    private function getLoomUrlsFromDatabase($timeframe = null)
+    protected function getLoomUrlsFromDatabase($timeframe = null)
     {
         $query = LoomUrl::query();
 
         if ($timeframe) {
-            $query->where('created_at', '>=', now()->sub($timeframe));
+            $date = match ($timeframe) {
+                'day' => Carbon::now()->subDay(),
+                'week' => Carbon::now()->subWeek(),
+                'month' => Carbon::now()->subMonth(),
+                default => null,
+            };
+
+            if ($date) {
+                $query->where('date', '>=', $date);
+            }
         }
 
-        return $query->get();
+        return $query->get()->toArray();
     }
 
-    private function scanDirectories(&$urls, &$undatedUrls, $timeframe)
+    protected function scanDirectories($timeframe)
     {
         $directories = Config::get('loom-updates.scan_directories', [app_path(), resource_path()]);
-        
+
         foreach ($directories as $directory) {
-            $this->processDirectory($directory, $urls, $undatedUrls, $timeframe);
+            $this->processDirectory($directory, $timeframe);
         }
     }
 
-    private function processDirectory($directory, &$urls, &$undatedUrls, $timeframe)
+    protected function processDirectory($directory, $timeframe)
     {
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory));
-        foreach ($files as $file) {
-            if ($file->isFile() && in_array($file->getExtension(), Config::get('loom-updates.file_extensions', ['php', 'blade.php']))) {
-                $content = file_get_contents($file->getRealPath());
-                preg_match_all('/@loom\s+(https:\/\/www\.loom\.com\/share\/[a-zA-Z0-9]+(\?sid=[a-zA-Z0-9-]+)?)\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(.*)/', $content, $matches, PREG_SET_ORDER);
-                foreach ($matches as $match) {
-                    $url = [
-                        'url' => $match[1],
-                        'file_path' => $this->getRelativePath($directory, $file->getRealPath()),
-                        'line_number' => $this->findLineNumber($content, $match[0]),
-                        'author' => $match[3],
-                        'date' => $match[4],
-                        'title' => $match[5],
-                    ];
-                    
-                    if ($this->isWithinTimeframe($url['date'], $timeframe)) {
-                        $urls[] = $url;
-                    } else {
-                        $undatedUrls[] = $url;
-                    }
-                }
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($directory, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if ($this->isValidFile($file)) {
+                $this->processFile($file, $directory, $timeframe);
             }
         }
     }
 
-    // Add this new method to the class
-    private function getRelativePath($from, $to)
+    protected function isValidFile($file)
+    {
+        return $file->isFile() && in_array($file->getExtension(), Config::get('loom-updates.file_extensions', ['php', 'blade.php']));
+    }
+
+    protected function processFile($file, $directory, $timeframe)
+    {
+        $content = file_get_contents($file->getRealPath());
+        preg_match_all('/@loom\s+(https:\/\/www\.loom\.com\/share\/[a-zA-Z0-9]+(\?sid=[a-zA-Z0-9-]+)?)\s+(\d{4}-\d{2}-\d{2})(?:\s+(\S+))?(?:\s+"([^"\n]*)")?\s*$/m', $content, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $match) {
+            $url = $this->createUrlArray($match, $file, $directory);
+            $this->addUrlToAppropriateArray($url, $timeframe);
+        }
+    }
+
+    protected function createUrlArray($match, $file, $directory)
+    {
+        return [
+            'url' => $match[1],
+            'file_path' => $this->getRelativePath($directory, $file->getRealPath()),
+            'line_number' => $this->findLineNumber($file->getRealPath(), $match[0]),
+            'date' => $match[3] ?? '',
+            'author' => $match[4] ?? '',
+            'tag' => isset($match[5]) ? str_replace('"', '', trim($match[5])) : '',
+            'title' => '', // Only available via database storage
+        ];
+    }
+
+    protected function addUrlToAppropriateArray($url, $timeframe)
+    {
+        if ($this->isWithinTimeframe($url['date'], $timeframe)) {
+            $this->urlsFromFiles[] = $url;
+        }
+    }
+
+    protected function getRelativePath($from, $to)
     {
         $from = rtrim($from, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         $to = rtrim($to, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
@@ -98,9 +142,9 @@ class ListLoomUrls extends Command
         return rtrim($relativePath, DIRECTORY_SEPARATOR);
     }
 
-    private function findLineNumber($content, $match)
+    protected function findLineNumber($filePath, $match)
     {
-        $lines = explode("\n", $content);
+        $lines = file($filePath);
         foreach ($lines as $index => $line) {
             if (strpos($line, $match) !== false) {
                 return $index + 1;
@@ -109,41 +153,37 @@ class ListLoomUrls extends Command
         return null;
     }
 
-    private function isWithinTimeframe($date, $timeframe)
+    protected function isWithinTimeframe($date, $timeframe)
     {
         if (!$timeframe) {
             return true;
         }
-        
-        $date = new \DateTime($date);
-        $now = new \DateTime();
-        
-        switch ($timeframe) {
-            case 'day':
-                return $date >= $now->modify('-1 day');
-            case 'week':
-                return $date >= $now->modify('-1 week');
-            case 'month':
-                return $date >= $now->modify('-1 month');
-            default:
-                return true;
-        }
+
+        $date = Carbon::parse($date);
+        $now = Carbon::now();
+
+        return match ($timeframe) {
+            'day' => $date->isAfter($now->copy()->subDay(2)),
+            'week' => $date->isAfter($now->copy()->subDays(8)),
+            'month' => $date->isAfter($now->copy()->subDays(32)),
+            default => true,
+        };
     }
 
-    private function displayUrls($urls, $title)
+    protected function displayUrls($urls, $title)
     {
         $this->info($title);
-        
+
         if (count($urls) > 0) {
             $this->table(
-                ['URL', 'File', 'Line', 'Author', 'Date'],
+                ['URL', 'File', 'Date', 'Author', 'Tag'],
                 collect($urls)->map(function ($url) {
                     return [
                         $url['url'],
-                        $url['file_path'],
-                        $url['line_number'],
-                        $url['author'] ?? 'N/A',
+                        $url['file_path'] . ":" . $url['line_number'],
                         $url['date'] ?? 'N/A',
+                        $url['author'] ?? 'N/A',
+                        $url['tag'] ?? 'N/A',
                     ];
                 })
             );

@@ -54,10 +54,16 @@
         .title:hover {
             text-decoration: underline;
         }
-        .title-cell {
+        .info-cell {
+            display: flex;
+            flex-direction: row;
+            gap: 16px;
+            align-items: center;
+        }
+        .info-cell-text {
             display: flex;
             flex-direction: column;
-            gap: 5px;
+            gap: 4px;
             align-items: flex-start;
         }
         .tag {
@@ -67,6 +73,10 @@
             border-radius: 5px;
             font-size: 14px;
         }
+        .filepath-text {
+            font-size: 12px;
+            color: #5c5c5c;
+        }
     </style>
 </head>
 <body>
@@ -75,9 +85,7 @@
         <table>
             <thead>
                 <tr>
-                    <th>Thumbnail</th>
-                    <th>Title</th>
-                    <th>File Path</th>
+                    <th>Loom Info</th>
                     <th>Date</th>
                     <th>Author</th>
                 </tr>
@@ -86,17 +94,21 @@
                 @foreach($loomUrls as $url)
                     <tr>
                         <td>
-                            <div class="thumbnail" style="background-image: url('{{ $url->image_url }}')" onclick="window.open('{{ $url->url }}', '_blank')"></div>
-                        </td>
-                        <td>
-                            <div class="title-cell">
-                                <div><a href="{{ $url->url }}" target="_blank" class="title">{{ $url->title }}</a></div>
-                                <div>
-                                    <span class="tag">{{ $url->tag }}</span>
+                            <div class="info-cell">
+                                <div class="thumbnail" style="background-image: url('{{ $url->image_url }}')" onclick="window.open('{{ $url->url }}', '_blank')"></div>
+                                <div class="info-cell-text">
+                                    <div><a href="{{ $url->url }}" target="_blank" class="title">{{ $url->title }}</a></div>
+                                    @if($url->tag !== '')
+                                        <div>
+                                            <span class="tag">{{ $url->tag }}</span>
+                                        </div>
+                                    @endif
+                                    <div class="filepath-text">
+                                        {{ $url->file_path }}:{{ $url->line_number }}
+                                    </div>
                                 </div>
-                            </div>            
+                            </div>
                         </td>
-                        <td>{{ $url->file_path }}:{{ $url->line_number }}</td>
                         <td>{{ $url->date }}</td>
                         <td>{{ $url->author }}</td>
                     </tr>

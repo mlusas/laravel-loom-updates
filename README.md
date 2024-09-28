@@ -37,6 +37,12 @@ You can install the package via composer:
 composer require mlusas/laravel-loom-updates
 ```
 
+After installation, run the migrations to create the necessary database table:
+
+```bash
+php artisan migrate
+```
+
 ## Configuration
 
 Publish the configuration file:
@@ -45,7 +51,22 @@ Publish the configuration file:
 php artisan vendor:publish --provider="mlusas\LaravelLoomUpdates\LoomUpdatesServiceProvider" --tag="config"
 ```
 
-This will create a `config/loom-updates.php` file where you can modify the package settings.
+This will create a `config/loom-updates.php` file where you can modify the package settings:
+
+```php
+return [
+    'use_database' => true,
+    'scan_directories' => [
+        app_path(),
+        resource_path(),
+    ],
+    'file_extensions' => ['php', 'js', 'ts', 'vue'],
+];
+```
+
+- `use_database`: Set to `true` to store Loom URLs in the database, or `false` to only scan files without storing.
+- `scan_directories`: An array of directories to scan for Loom URLs.
+- `file_extensions`: An array of file extensions to scan for Loom URLs.
 
 ## Usage
 
@@ -55,18 +76,18 @@ You can add Loom URLs to your code using the following format:
 
 ```php
 /**
- * @loom https://www.loom.com/share/your-video-id author YYYY-MM-DD tag
+ * @loom https://www.loom.com/share/your-video-id YYYY-MM-DD author "new Feature"
  */
 ```
 
-- `author`: The name of the person who created the video (optional)
-- `YYYY-MM-DD`: The date the video was created (optional)
-- `tag`: A custom tag for categorizing the video (optional)
+- `YYYY-MM-DD`: The date the video was created
+- `author`: The name of the person who created the video
+- `tag`: A custom tag for categorizing the video (optional, enclosed in double quotes)
 
 Example:
 ```php
 /**
- * @loom https://www.loom.com/share/1234567890abcdef John.Doe 2023-09-27 ComplexAlgorithmExplanation
+ * @loom https://www.loom.com/share/1234567890abcdef 2023-09-27 John.Doe "bug"
  */
 class ComplexAlgorithm
 {
@@ -76,7 +97,7 @@ class ComplexAlgorithm
 
 ### Scanning for Loom URLs
 
-To scan your project for Loom URLs and store them in the database, run:
+To scan your project for Loom URLs and store them in the database (if `use_database` is true), run:
 
 ```bash
 php artisan loom:store
@@ -84,7 +105,7 @@ php artisan loom:store
 
 ### Listing Loom URLs
 
-To list all stored Loom URLs, use:
+To list all Loom URLs found in your codebase, use:
 
 ```bash
 php artisan loom:list
@@ -100,6 +121,10 @@ Timeframe options include:
 - "week"
 - "month"
 
+Note: This command will always scan your files in real-time. If `use_database` is set to `true`, it will also check the database for any stored URLs.
+
+The output will include the URL, file path, line number, author, date, and tag for each Loom URL found.
+
 ### Viewing Loom Videos
 
 To view the Loom videos in a web interface, add the following route to your `routes/web.php` file:
@@ -113,11 +138,11 @@ Route::get('/loom-videos', function () {
 
 Then visit `/loom-videos` in your browser.
 
-*Tip: include the command in your CI/CD to scan, store, and show changes when pushed to staging or production.*
+*Tip: include the `loom:store` command in your CI/CD to scan, store, and show changes when pushed to staging or production.*
 
 Here's a preview of what the Loom viewer interface looks like:
 
-![Loom Viewer Interface](./assets/example-LaravelLoomUpdate_interface.jpg)
+![Loom Viewer Interface](./assets/example-LaravelLoomUpdate_interface_2.jpg)
 
 ## Use Cases
 

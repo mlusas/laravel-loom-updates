@@ -13,15 +13,19 @@ class StoreLoomUrls extends Command
 
     public function handle()
     {
+        $this->info('Starting Loom URL scan and storage...');
         $listCommand = new ListLoomUrls();
-        $urls = $listCommand->getUrls();
+        $urls = $listCommand->getAllUrls();
 
+        $loomUrls = LoomUrl::all();
+
+        $storedCount = 0;
         foreach ($urls as $url) {
-            $existingUrl = LoomUrl::where('url', $url['url'])->first();
-    
+            $existingUrl = $loomUrls->firstWhere('url', $url['url']);
+
             if (!$existingUrl) {
                 $metaData = (new MetaScraper())->scrape($url['url']);
-                
+
                 LoomUrl::create([
                     'url' => $url['url'],
                     'file_path' => $url['file_path'],
@@ -30,11 +34,12 @@ class StoreLoomUrls extends Command
                     'author' => $url['author'] ?? null,
                     'title' => $metaData['title'] ?? null,
                     'image_url' => $metaData['image_url'] ?? null,
-                    'tag' => $url['title'],
+                    'tag' => $url['tag'] ?? null,
                 ]);
+                $storedCount++;
             }
         }
 
-        $this->info('Loom URLs stored successfully.');
+        $this->info("Loom URLs stored successfully. Stored $storedCount new URLs.");
     }
 }
