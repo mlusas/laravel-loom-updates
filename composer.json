@@ -2,7 +2,7 @@
     "name": "mlusas/laravel-loom-updates",
     "description": "A Laravel package for tracking Loom video updates in your codebase",
     "type": "library",
-    "license": "GPL",
+    "license": "GPL-3.0-or-later",
     "authors": [
         {
             "name": "Mitch Lusas",
