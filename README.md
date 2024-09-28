@@ -151,4 +151,4 @@ If you discover any security-related issues, please email security@example.com i
 
 ## License
 
-The GNU General Public License v3.0 (GPLv3). Please see [License File](LICENSE.md) for more information.
+The GNU General Public License v3.0 (GPLv3). Please see [License File](LICENSE) for more information.
